@@ -35,6 +35,21 @@ class VisualGridHuntGame:
             if tuple(op_pos) != (0, 0) and tuple(op_pos) not in self.walls and tuple(op_pos) not in self.food_positions:
                 self.opponents.append(op_pos)
 
+        # ===== ADDED (Step 2.1 - Extending the Environment Initialization) =====
+        # New hazard collection: toxic traps are hidden environment hazards.
+        # Populate them safely, avoiding the agent's start position (0, 0),
+        # existing walls, and existing food positions.
+        self.toxic_traps = set()
+        while len(self.toxic_traps) < max(3, num_food // 2):
+            tx = random.randint(0, self.width - 1)
+            ty = random.randint(0, self.height - 1)
+            trap_tuple = (tx, ty)
+            if (trap_tuple != (0, 0)
+                    and trap_tuple not in self.walls
+                    and trap_tuple not in self.food_positions):
+                self.toxic_traps.add(trap_tuple)
+        # ===== END ADDED (Step 2.1) =====
+
         self.score = 0
         self.steps = 0
         self.collision = False
@@ -45,6 +60,11 @@ class VisualGridHuntGame:
             'opponent_positions': [list(op) for op in self.opponents],
             'smells_food': tuple(self.agent_pos) in self.food_positions,
             'hit_wall': tuple(self.agent_pos) in self.walls,
+            # ===== ADDED (Step 2.2 - Updating the Perception Subsystem) =====
+            # New boolean sensor: lets the agent perceive whether it is
+            # currently standing on a hidden toxic trap.
+            'smells_toxin': tuple(self.agent_pos) in self.toxic_traps,
+            # ===== END ADDED (Step 2.2) =====
             'collision': self.collision,
             'score': self.score,
             'remaining_food': len(self.food_positions)
@@ -72,6 +92,13 @@ class VisualGridHuntGame:
         if tuple_pos in self.food_positions:
             self.food_positions.remove(tuple_pos)
             self.score += 20
+
+        # ===== ADDED (Step 2.3 - Modifying Action Execution) =====
+        # Apply a score penalty if the agent's updated position intersects
+        # with a hidden toxic trap.
+        if tuple_pos in self.toxic_traps:
+            self.score -= 15
+        # ===== END ADDED (Step 2.3) =====
 
         for op in self.opponents:
             move = random.choice(['Up', 'Down', 'Left', 'Right', 'Stay'])
@@ -145,6 +172,22 @@ class GridGameGUI:
             y1 = (self.env.height - 1 - fy) * self.cell_size + offset
             self.canvas.create_oval(x1, y1, x1 + self.cell_size * 0.5, y1 + self.cell_size * 0.5, fill="#f59e0b",
                                     outline="#d97706")
+
+        # ===== ADDED (Step 2.3 - Visual Rendering of Toxic Traps) =====
+        # Render each toxic trap as a purple diamond so it is visually
+        # distinct from walls (grey), food (orange), and opponents (red).
+        for tx, ty in self.env.toxic_traps:
+            cx = tx * self.cell_size + self.cell_size / 2
+            cy = (self.env.height - 1 - ty) * self.cell_size + self.cell_size / 2
+            r = self.cell_size * 0.3
+            self.canvas.create_polygon(
+                cx, cy - r,
+                cx + r, cy,
+                cx, cy + r,
+                cx - r, cy,
+                fill="#7c3aed", outline="#4c1d95"
+            )
+        # ===== END ADDED (Step 2.3) =====
 
         for ox, oy in self.env.opponents:
             offset = self.cell_size * 0.2
