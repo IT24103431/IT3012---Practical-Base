@@ -11,6 +11,13 @@ class VisualGridHuntGame:
         self.height = height
         self.agent_pos = [0, 0]  # Starting position (x, y)
 
+        # ===== ADDED (Lab 02 - Step 1.1: Facing Direction) =====
+        # The agent needs a notion of "which way it is pointing" so that
+        # get_percept() can report what is directly ahead of it, instead of
+        # its exact global coordinates. Defaults to facing 'Up'.
+        self.facing = 'Up'
+        # ===== END ADDED =====
+
         if custom_walls is not None:
             self.walls = set(custom_walls)
         else:
@@ -35,7 +42,7 @@ class VisualGridHuntGame:
             if tuple(op_pos) != (0, 0) and tuple(op_pos) not in self.walls and tuple(op_pos) not in self.food_positions:
                 self.opponents.append(op_pos)
 
-        # ===== ADDED (Step 2.1 - Extending the Environment Initialization) =====
+        # ===== ADDED (Lab 01, Step 2.1 - Extending the Environment Initialization) =====
         # New hazard collection: toxic traps are hidden environment hazards.
         # Populate them safely, avoiding the agent's start position (0, 0),
         # existing walls, and existing food positions.
@@ -48,31 +55,66 @@ class VisualGridHuntGame:
                     and trap_tuple not in self.walls
                     and trap_tuple not in self.food_positions):
                 self.toxic_traps.add(trap_tuple)
-        # ===== END ADDED (Step 2.1) =====
+        # ===== END ADDED (Lab 01, Step 2.1) =====
 
         self.score = 0
         self.steps = 0
         self.collision = False
 
+    # ===== ADDED (Lab 02 - Step 1.1: Facing Direction Helper) =====
+    def _cell_ahead(self) -> tuple:
+        """Returns the coordinate tuple immediately in front of the agent,
+        based on self.facing. Clamped to the grid boundary, exactly like
+        the movement logic in execute_action()."""
+        x, y = self.agent_pos
+        if self.facing == 'Up':
+            y = min(self.height - 1, y + 1)
+        elif self.facing == 'Down':
+            y = max(0, y - 1)
+        elif self.facing == 'Left':
+            x = max(0, x - 1)
+        elif self.facing == 'Right':
+            x = min(self.width - 1, x + 1)
+        return (x, y)
+    # ===== END ADDED =====
+
     def get_percept(self) -> dict:
+        # ===== MODIFIED (Lab 02 - Step 1.1: Partial Observability) =====
+        # The environment no longer reveals the agent's exact global
+        # coordinates (agent_pos has been removed). Instead, the agent only
+        # receives local boolean sensors:
+        #   - 'wall_ahead': is there a wall in the cell the agent is facing?
+        #   - 'food_here':  is there food on the agent's CURRENT cell?
+        # This is a deliberate handicap: the agent can no longer tell WHERE
+        # it is on the grid, only what is immediately around it.
+        ahead = self._cell_ahead()
+        # 'wall_ahead' is True if the next cell is an actual wall tile, OR
+        # if the agent is pressed against the grid boundary (in which case
+        # _cell_ahead() clamps to the agent's own current cell - meaning it
+        # physically cannot move further in that direction either way).
+        blocked_by_boundary = (ahead == tuple(self.agent_pos))
         return {
-            'agent_pos': list(self.agent_pos),
+            'wall_ahead': (ahead in self.walls) or blocked_by_boundary,
+            'food_here': tuple(self.agent_pos) in self.food_positions,
             'opponent_positions': [list(op) for op in self.opponents],
-            'smells_food': tuple(self.agent_pos) in self.food_positions,
-            'hit_wall': tuple(self.agent_pos) in self.walls,
-            # ===== ADDED (Step 2.2 - Updating the Perception Subsystem) =====
-            # New boolean sensor: lets the agent perceive whether it is
-            # currently standing on a hidden toxic trap.
             'smells_toxin': tuple(self.agent_pos) in self.toxic_traps,
-            # ===== END ADDED (Step 2.2) =====
             'collision': self.collision,
             'score': self.score,
             'remaining_food': len(self.food_positions)
         }
+        # ===== END MODIFIED =====
 
     def execute_action(self, action: str):
         self.steps += 1
         new_pos = list(self.agent_pos)
+
+        # ===== ADDED (Lab 02 - Step 1.1: Track Facing) =====
+        # Whenever the agent issues a movement action, update its facing
+        # direction to match. Non-movement actions (e.g. 'Suck') leave the
+        # facing direction unchanged.
+        if action in ('Up', 'Down', 'Left', 'Right'):
+            self.facing = action
+        # ===== END ADDED =====
 
         if action == 'Up':
             new_pos[1] = min(self.height - 1, new_pos[1] + 1)
@@ -93,12 +135,12 @@ class VisualGridHuntGame:
             self.food_positions.remove(tuple_pos)
             self.score += 20
 
-        # ===== ADDED (Step 2.3 - Modifying Action Execution) =====
+        # ===== ADDED (Lab 01, Step 2.3 - Modifying Action Execution) =====
         # Apply a score penalty if the agent's updated position intersects
         # with a hidden toxic trap.
         if tuple_pos in self.toxic_traps:
             self.score -= 15
-        # ===== END ADDED (Step 2.3) =====
+        # ===== END ADDED (Lab 01, Step 2.3) =====
 
         for op in self.opponents:
             move = random.choice(['Up', 'Down', 'Left', 'Right', 'Stay'])
@@ -173,7 +215,7 @@ class GridGameGUI:
             self.canvas.create_oval(x1, y1, x1 + self.cell_size * 0.5, y1 + self.cell_size * 0.5, fill="#f59e0b",
                                     outline="#d97706")
 
-        # ===== ADDED (Step 2.3 - Visual Rendering of Toxic Traps) =====
+        # ===== ADDED (Lab 01, Step 2.3 - Visual Rendering of Toxic Traps) =====
         # Render each toxic trap as a purple diamond so it is visually
         # distinct from walls (grey), food (orange), and opponents (red).
         for tx, ty in self.env.toxic_traps:
@@ -187,7 +229,7 @@ class GridGameGUI:
                 cx - r, cy,
                 fill="#7c3aed", outline="#4c1d95"
             )
-        # ===== END ADDED (Step 2.3) =====
+        # ===== END ADDED (Lab 01, Step 2.3) =====
 
         for ox, oy in self.env.opponents:
             offset = self.cell_size * 0.2
