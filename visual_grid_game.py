@@ -164,12 +164,20 @@ class VisualGridHuntGame:
 class GridGameGUI:
     """Tkinter wrapper that dynamically scales cell sizes to keep larger grids on screen."""
 
-    def __init__(self, root, width=10, height=10, num_food=12, num_opponents=2, walls=None):
+    def __init__(self, root, width=10, height=10, num_food=12, num_opponents=2, walls=None, agent_class=None):
         self.root = root
         self.root.title("IT3012 - Scalable Multi-Agent Grid Hunt")
 
         self.env = VisualGridHuntGame(width=width, height=height, num_food=num_food, num_opponents=num_opponents,
                                       custom_walls=walls)
+
+        # ===== ADDED (Lab 02 - Visual GUI hookup for SimpleReflexAgent / ModelBasedAgent) =====
+        # If an agent_class is supplied (e.g. SimpleReflexAgent, ModelBasedAgent),
+        # instantiate it and let it drive the simulation instead of random moves.
+        # If agent_class is None, run_loop() falls back to random actions
+        # (original Lab 01 behavior - fully backward compatible).
+        self.agent = agent_class() if agent_class is not None else None
+        # ===== END ADDED =====
 
         # Dynamically calculate cell size so the total canvas fits nicely within a 600x600 window ceiling
         max_canvas_dim = 600
@@ -250,7 +258,16 @@ class GridGameGUI:
 
         def step():
             if not self.env.is_done():
-                action = random.choice(['Up', 'Down', 'Left', 'Right'])
+                # ===== MODIFIED (Lab 02 - Visual GUI hookup) =====
+                # Use the attached agent's own perception/decision loop if
+                # one was provided; otherwise fall back to random movement
+                # (Lab 01 default behavior).
+                if self.agent is not None:
+                    percept = self.env.get_percept()
+                    action = self.agent.sense_and_act(percept)
+                else:
+                    action = random.choice(['Up', 'Down', 'Left', 'Right'])
+                # ===== END MODIFIED =====
                 self.env.execute_action(action)
 
                 self.draw_grid()
@@ -265,7 +282,18 @@ class GridGameGUI:
 
 
 if __name__ == "__main__":
+    # ===== MODIFIED (Lab 02 - Visual GUI hookup) =====
+    # Import the agents here (not at the top of the file) to keep
+    # VisualGridHuntGame usable on its own without requiring agent.py.
+    from agent import SimpleReflexAgent, ModelBasedAgent
+
     root = tk.Tk()
-    # Try a larger grid size like 12x12 with 15 food and 3 opponents!
-    app = GridGameGUI(root, width=12, height=12, num_food=15, num_opponents=0)
+
+    # --- Swap the agent_class below to watch a different architecture ---
+    # agent_class=None              -> random movement (Lab 01 default)
+    # agent_class=SimpleReflexAgent -> watch it get stuck in a corner
+    # agent_class=ModelBasedAgent   -> watch it remember and escape
+    app = GridGameGUI(root, width=6, height=6, num_food=5, num_opponents=0,
+                       walls={(0, 1)}, agent_class=ModelBasedAgent)
+    # ===== END MODIFIED =====
     root.mainloop()
