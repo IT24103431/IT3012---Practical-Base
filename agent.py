@@ -1,5 +1,10 @@
 # agent.py
 import random
+# ===== ADDED (Lab 03 - Step 1.2: imports needed for BFS/DFS/UCS) =====
+from collections import deque
+import heapq
+import itertools
+# ===== END ADDED =====
 
 
 class GreedyGridAgent:
@@ -98,3 +103,167 @@ class ModelBasedAgent:
         self.action_history.append(action)
         return action
 # ===== END ADDED (Step 1.3) =====
+
+
+# ===== ADDED (Lab 03 - Step 1.2 & 1.3: Search / Goal-Based Agent) =====
+class SearchAgent:
+    """
+    A Goal-Based / Planning Agent (Lecture 04).
+
+    Unlike the reflex agents above, this agent does NOT react turn-by-turn.
+    Instead, whenever it has no plan, it forms a COMPLETE offline plan (a
+    full sequence of actions) by running an uninformed search algorithm
+    against the environment's exposed state space, then executes that plan
+    one action at a time until it needs to re-plan.
+    """
+
+    # Movement directions shared by all three search algorithms.
+    _MOVES = [
+        ('Up', (0, 1)),
+        ('Down', (0, -1)),
+        ('Left', (-1, 0)),
+        ('Right', (1, 0)),
+    ]
+
+    def __init__(self):
+        self.plan = []
+        self.active_algo = 'DFS'  # 'BFS', 'DFS', or 'UCS'
+
+    # ---------- Step 1.2: Uninformed Search Algorithms ----------
+
+    def bfs_search(self, start_pos, goal_pos, walls, grid_size) -> list:
+        """Breadth-First Search - FIFO frontier (deque.popleft()). Explores
+        the shallowest nodes first, guaranteeing the shortest path."""
+        width, height = grid_size
+        wall_set = set(tuple(w) for w in walls)
+        start = tuple(start_pos)
+        goal = tuple(goal_pos)
+
+        if start == goal:
+            return []
+
+        frontier = deque([(start, [])])
+        reached = {start}  # ===== reached set: converts Tree Search -> Graph Search =====
+
+        while frontier:
+            pos, path = frontier.popleft()
+            for action, (dx, dy) in self._MOVES:
+                npos = (pos[0] + dx, pos[1] + dy)
+                if not (0 <= npos[0] < width and 0 <= npos[1] < height):
+                    continue
+                if npos in wall_set or npos in reached:
+                    continue
+                new_path = path + [action]
+                if npos == goal:
+                    return new_path
+                reached.add(npos)
+                frontier.append((npos, new_path))
+
+        return None
+
+    def dfs_search(self, start_pos, goal_pos, walls, grid_size) -> list:
+        """Depth-First Search - LIFO stack (list.pop()). Explores the
+        deepest nodes first; finds *a* path, not necessarily the shortest."""
+        width, height = grid_size
+        wall_set = set(tuple(w) for w in walls)
+        start = tuple(start_pos)
+        goal = tuple(goal_pos)
+
+        if start == goal:
+            return []
+
+        stack = [(start, [])]
+        reached = {start}  # ===== reached set: prevents infinite loops in DFS =====
+
+        while stack:
+            pos, path = stack.pop()
+            for action, (dx, dy) in self._MOVES:
+                npos = (pos[0] + dx, pos[1] + dy)
+                if not (0 <= npos[0] < width and 0 <= npos[1] < height):
+                    continue
+                if npos in wall_set or npos in reached:
+                    continue
+                new_path = path + [action]
+                if npos == goal:
+                    return new_path
+                reached.add(npos)
+                stack.append((npos, new_path))
+
+        return None
+
+    def ucs_search(self, start_pos, goal_pos, walls, grid_size) -> list:
+        """Uniform-Cost Search - priority queue (heapq.heappop()) ordered
+        by total path cost g(n). Every step costs 1 here, so UCS behaves
+        like BFS, but generalizes to variable step costs."""
+        width, height = grid_size
+        wall_set = set(tuple(w) for w in walls)
+        start = tuple(start_pos)
+        goal = tuple(goal_pos)
+
+        if start == goal:
+            return []
+
+        counter = itertools.count()  # tie-breaker so heapq never compares lists
+        frontier = [(0, next(counter), start, [])]
+        best_cost = {start: 0}
+
+        while frontier:
+            cost, _, pos, path = heapq.heappop(frontier)
+            if cost > best_cost.get(pos, float('inf')):
+                continue  # stale entry, a cheaper path to pos was already found
+            if pos == goal:
+                return path
+
+            for action, (dx, dy) in self._MOVES:
+                npos = (pos[0] + dx, pos[1] + dy)
+                if not (0 <= npos[0] < width and 0 <= npos[1] < height):
+                    continue
+                if npos in wall_set:
+                    continue
+                new_cost = cost + 1  # step cost = 1
+                if npos not in best_cost or new_cost < best_cost[npos]:
+                    best_cost[npos] = new_cost
+                    heapq.heappush(frontier, (new_cost, next(counter), npos, path + [action]))
+
+        return None
+
+    # ---------- Step 1.3: Executing the Offline Plan ----------
+
+    def _closest_food(self, agent_pos, all_food):
+        """Picks the food pellet with the smallest Manhattan distance from
+        the agent's current position, to give the search a concrete goal."""
+        if not all_food:
+            return None
+        ax, ay = agent_pos
+        return min(all_food, key=lambda f: abs(f[0] - ax) + abs(f[1] - ay))
+
+    def sense_and_act(self, percept: dict) -> str:
+        if not self.plan:
+            agent_pos = tuple(percept['agent_pos'])
+            all_food = [tuple(f) for f in percept.get('all_food', [])]
+            walls = percept.get('walls', [])
+            grid_size = percept.get('grid_size')
+
+            goal = self._closest_food(agent_pos, all_food)
+            if goal is None:
+                # No food left to plan toward.
+                return 'Up'
+
+            if self.active_algo == 'BFS':
+                path = self.bfs_search(agent_pos, goal, walls, grid_size)
+            elif self.active_algo == 'DFS':
+                path = self.dfs_search(agent_pos, goal, walls, grid_size)
+            elif self.active_algo == 'UCS':
+                path = self.ucs_search(agent_pos, goal, walls, grid_size)
+            else:
+                path = None
+
+            self.plan = path if path else []
+
+            if not self.plan:
+                # Goal unreachable - fall back to a single default move
+                # rather than crashing.
+                return 'Up'
+
+        return self.plan.pop(0)
+# ===== END ADDED (Lab 03) =====

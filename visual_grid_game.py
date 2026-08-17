@@ -94,6 +94,19 @@ class VisualGridHuntGame:
         # physically cannot move further in that direction either way).
         blocked_by_boundary = (ahead == tuple(self.agent_pos))
         return {
+            # ===== ADDED (Lab 03 - Step 1.1: Exposing the World Model) =====
+            # Classical search (BFS/DFS/UCS) needs an explicit start state
+            # to simulate future moves from, so agent_pos is restored here.
+            # 'grid_size', 'walls', and 'all_food' expose the rest of the
+            # state space the search algorithms need. This deliberately
+            # trades away Lab 02's partial-observability handicap: a
+            # Goal-Based/Planning agent needs the full picture to plan
+            # ahead, unlike a pure reflex agent.
+            'agent_pos': list(self.agent_pos),
+            'grid_size': (self.width, self.height),
+            'walls': list(self.walls),
+            'all_food': list(self.food_positions),
+            # ===== END ADDED (Lab 03) =====
             'wall_ahead': (ahead in self.walls) or blocked_by_boundary,
             'food_here': tuple(self.agent_pos) in self.food_positions,
             'opponent_positions': [list(op) for op in self.opponents],
@@ -282,10 +295,10 @@ class GridGameGUI:
 
 
 if __name__ == "__main__":
-    # ===== MODIFIED (Lab 02 - Visual GUI hookup) =====
+    # ===== MODIFIED (Lab 03 - GUI hookup for SearchAgent) =====
     # Import the agents here (not at the top of the file) to keep
     # VisualGridHuntGame usable on its own without requiring agent.py.
-    from agent import SimpleReflexAgent, ModelBasedAgent
+    from agent import SimpleReflexAgent, ModelBasedAgent, SearchAgent
 
     root = tk.Tk()
 
@@ -293,7 +306,8 @@ if __name__ == "__main__":
     # agent_class=None              -> random movement (Lab 01 default)
     # agent_class=SimpleReflexAgent -> watch it get stuck in a corner
     # agent_class=ModelBasedAgent   -> watch it remember and escape
+    # agent_class=SearchAgent       -> watch it plan a full path to food (BFS/DFS/UCS)
     app = GridGameGUI(root, width=6, height=6, num_food=5, num_opponents=0,
-                       walls={(0, 1)}, agent_class=ModelBasedAgent)
+                       walls={(0, 1)}, agent_class=SearchAgent)
     # ===== END MODIFIED =====
     root.mainloop()
