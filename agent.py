@@ -5,6 +5,9 @@ from collections import deque
 import heapq
 import itertools
 # ===== END ADDED =====
+# ===== ADDED (Lab 04 - Step 1.1: needed for euclidean_distance) =====
+import math
+# ===== END ADDED =====
 
 
 class GreedyGridAgent:
@@ -108,16 +111,16 @@ class ModelBasedAgent:
 # ===== ADDED (Lab 03 - Step 1.2 & 1.3: Search / Goal-Based Agent) =====
 class SearchAgent:
     """
-    A Goal-Based / Planning Agent (Lecture 04).
+    A Goal-Based / Planning Agent (Lecture 04/05).
 
     Unlike the reflex agents above, this agent does NOT react turn-by-turn.
     Instead, whenever it has no plan, it forms a COMPLETE offline plan (a
-    full sequence of actions) by running an uninformed search algorithm
-    against the environment's exposed state space, then executes that plan
-    one action at a time until it needs to re-plan.
+    full sequence of actions) by running a search algorithm against the
+    environment's exposed state space, then executes that plan one action
+    at a time until it needs to re-plan.
     """
 
-    # Movement directions shared by all three search algorithms.
+    # Movement directions shared by all search algorithms.
     _MOVES = [
         ('Up', (0, 1)),
         ('Down', (0, -1)),
@@ -127,9 +130,11 @@ class SearchAgent:
 
     def __init__(self):
         self.plan = []
-        self.active_algo = 'DFS'  # 'BFS', 'DFS', or 'UCS'
+        # ===== MODIFIED (Lab 04) ===== 'BFS', 'DFS', 'UCS', or 'AStar'
+        self.active_algo = 'AStar'
+        # ===== END MODIFIED =====
 
-    # ---------- Step 1.2: Uninformed Search Algorithms ----------
+    # ---------- Step 1.2 (Lab 03): Uninformed Search Algorithms ----------
 
     def bfs_search(self, start_pos, goal_pos, walls, grid_size) -> list:
         """Breadth-First Search - FIFO frontier (deque.popleft()). Explores
@@ -227,6 +232,74 @@ class SearchAgent:
 
         return None
 
+    # ---------- Step 1.1 (Lab 04): Heuristic Functions ----------
+
+    def manhattan_distance(self, pos, goal) -> int:
+        """h(n) = |x1 - x2| + |y1 - y2|
+        Admissible for 4-way (Up/Down/Left/Right) grid movement: it never
+        overestimates the true number of steps needed, since every step
+        changes exactly one coordinate by 1."""
+        return abs(pos[0] - goal[0]) + abs(pos[1] - goal[1])
+
+    def euclidean_distance(self, pos, goal) -> float:
+        """h(n) = sqrt((x1 - x2)^2 + (y1 - y2)^2)
+        Straight-line distance. Still admissible here (it's always <= the
+        true grid-step cost), but it underestimates more loosely than
+        Manhattan distance on a 4-way grid, since diagonal movement isn't
+        actually allowed."""
+        return math.sqrt((pos[0] - goal[0]) ** 2 + (pos[1] - goal[1]) ** 2)
+
+    # ---------- Step 1.2 (Lab 04): A* Search ----------
+
+    def astar_search(self, start_pos, goal_pos, walls, grid_size, heuristic_type='manhattan') -> list:
+        """A* Search - priority queue ordered by f(n) = g(n) + h(n).
+        g(n) = path cost so far, h(n) = estimated cost to goal (heuristic).
+        Combines UCS's guarantee of finding the cheapest path with a
+        heuristic that focuses exploration toward the goal, so far fewer
+        nodes are expanded than plain UCS/BFS."""
+        width, height = grid_size
+        wall_set = set(tuple(w) for w in walls)
+        start = tuple(start_pos)
+        goal = tuple(goal_pos)
+
+        heuristic_fn = (self.manhattan_distance if heuristic_type == 'manhattan'
+                        else self.euclidean_distance)
+
+        if start == goal:
+            return []
+
+        g_start = 0
+        h_start = heuristic_fn(start, goal)
+        f_start = g_start + h_start
+
+        # Frontier tuple format: (f_cost, g_cost, current_pos, path_taken)
+        frontier = [(f_start, g_start, start, [])]
+        reached_states = set()
+
+        while frontier:
+            f_cost, g_cost, current_pos, path_taken = heapq.heappop(frontier)
+
+            if current_pos == goal:
+                return path_taken
+
+            if current_pos in reached_states:
+                continue
+            reached_states.add(current_pos)
+
+            for action, (dx, dy) in self._MOVES:
+                npos = (current_pos[0] + dx, current_pos[1] + dy)
+                if not (0 <= npos[0] < width and 0 <= npos[1] < height):
+                    continue
+                if npos in wall_set or npos in reached_states:
+                    continue
+
+                g_new = g_cost + 1
+                h_new = heuristic_fn(npos, goal)
+                f_new = g_new + h_new
+                heapq.heappush(frontier, (f_new, g_new, npos, path_taken + [action]))
+
+        return None
+
     # ---------- Step 1.3: Executing the Offline Plan ----------
 
     def _closest_food(self, agent_pos, all_food):
@@ -238,6 +311,13 @@ class SearchAgent:
         return min(all_food, key=lambda f: abs(f[0] - ax) + abs(f[1] - ay))
 
     def sense_and_act(self, percept: dict) -> str:
+        # ===== ADDED (Lab 04 - Step 1.3) =====
+        # Extract global state, including remaining_food, to decide whether
+        # there's anything left worth planning a route toward.
+        if percept.get('remaining_food', 1) == 0:
+            return 'Up'
+        # ===== END ADDED =====
+
         if not self.plan:
             agent_pos = tuple(percept['agent_pos'])
             all_food = [tuple(f) for f in percept.get('all_food', [])]
@@ -255,6 +335,10 @@ class SearchAgent:
                 path = self.dfs_search(agent_pos, goal, walls, grid_size)
             elif self.active_algo == 'UCS':
                 path = self.ucs_search(agent_pos, goal, walls, grid_size)
+            # ===== ADDED (Lab 04 - Step 1.3) =====
+            elif self.active_algo == 'AStar':
+                path = self.astar_search(agent_pos, goal, walls, grid_size)
+            # ===== END ADDED =====
             else:
                 path = None
 
@@ -266,4 +350,4 @@ class SearchAgent:
                 return 'Up'
 
         return self.plan.pop(0)
-# ===== END ADDED (Lab 03) =====
+# ===== END ADDED (Lab 03 / Lab 04) =====
