@@ -8,6 +8,7 @@ import itertools
 # ===== ADDED (Lab 04 - Step 1.1: needed for euclidean_distance) =====
 import math
 # ===== END ADDED =====
+from logic_engine import KnowledgeBase
 
 
 class GreedyGridAgent:
@@ -133,6 +134,9 @@ class SearchAgent:
         # ===== MODIFIED (Lab 04) ===== 'BFS', 'DFS', 'UCS', or 'AStar'
         self.active_algo = 'AStar'
         # ===== END MODIFIED =====
+        self.kb = KnowledgeBase()
+        self.kb.tell_rule(['TargetVisible', 'HasDust'], 'SafeToEngage')
+        self.kb.tell_rule(['SafeToEngage', 'BloodseekerMissing'], 'Retreat')
 
     # ---------- Step 1.2 (Lab 03): Uninformed Search Algorithms ----------
 
@@ -251,7 +255,8 @@ class SearchAgent:
 
     # ---------- Step 1.2 (Lab 04): A* Search ----------
 
-    def astar_search(self, start_pos, goal_pos, walls, grid_size, heuristic_type='manhattan') -> list:
+    def astar_search(self, start_pos, goal_pos, walls, grid_size,
+                     heuristic_type='manhattan', tile_facts=None) -> list:
         """A* Search - priority queue ordered by f(n) = g(n) + h(n).
         g(n) = path cost so far, h(n) = estimated cost to goal (heuristic).
         Combines UCS's guarantee of finding the cheapest path with a
@@ -261,6 +266,7 @@ class SearchAgent:
         wall_set = set(tuple(w) for w in walls)
         start = tuple(start_pos)
         goal = tuple(goal_pos)
+        tile_facts = {} if tile_facts is None else tile_facts
 
         heuristic_fn = (self.manhattan_distance if heuristic_type == 'manhattan'
                         else self.euclidean_distance)
@@ -291,6 +297,14 @@ class SearchAgent:
                 if not (0 <= npos[0] < width and 0 <= npos[1] < height):
                     continue
                 if npos in wall_set or npos in reached_states:
+                    continue
+
+                # A physically reachable tile may still violate a safety rule.
+                self.kb.clear_facts()
+                for fact in tile_facts.get(npos, []):
+                    self.kb.tell_fact(fact)
+                self.kb.forward_chain()
+                if 'Retreat' in self.kb.facts:
                     continue
 
                 g_new = g_cost + 1
@@ -337,7 +351,12 @@ class SearchAgent:
                 path = self.ucs_search(agent_pos, goal, walls, grid_size)
             # ===== ADDED (Lab 04 - Step 1.3) =====
             elif self.active_algo == 'AStar':
-                path = self.astar_search(agent_pos, goal, walls, grid_size)
+                tile_facts = {
+                    (1, 0): ['TargetVisible', 'HasDust', 'BloodseekerMissing'],
+                    (0, 1): ['TargetVisible', 'HasDust'],
+                }
+                path = self.astar_search(agent_pos, goal, walls, grid_size,
+                                         tile_facts=tile_facts)
             # ===== END ADDED =====
             else:
                 path = None
